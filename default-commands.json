@@ -1,0 +1,404 @@
+{
+  "groups": [
+    {
+      "id": "display",
+      "name": "显示",
+      "commands": [
+        {
+          "id": "brightness",
+          "name": "屏幕亮度",
+          "widget": "slider",
+          "min": 0, "max": 255, "step": 1,
+          "cmd": "shell settings put system screen_brightness {value}",
+          "paramName": "value"
+        },
+        {
+          "id": "wifi",
+          "name": "WiFi 开关",
+          "widget": "switch",
+          "cmdOn": "shell svc wifi enable",
+          "cmdOff": "shell svc wifi disable"
+        },
+        {
+          "id": "screenshot",
+          "name": "截图到桌面",
+          "widget": "button",
+          "cmd": "shell screencap -p /sdcard/screenshot.png && pull /sdcard/screenshot.png {dest}",
+          "params": [{ "name": "dest", "label": "保存路径", "type": "text", "default": "C:\\Users\\Public\\Desktop\\screenshot.png" }]
+        }
+      ]
+    },
+    {
+      "id": "system",
+      "name": "系统",
+      "commands": [
+        {
+          "id": "reboot",
+          "name": "重启设备",
+          "widget": "button",
+          "cmd": "reboot",
+          "confirm": true
+        },
+        {
+          "id": "volume",
+          "name": "媒体音量",
+          "widget": "slider",
+          "min": 0, "max": 15, "step": 1,
+          "cmd": "shell media volume --stream 3 --set {value}",
+          "paramName": "value"
+        },
+        {
+          "id": "input_text",
+          "name": "输入文字",
+          "widget": "input",
+          "cmd": "shell input text \"{value}\"",
+          "paramName": "value",
+          "placeholder": "要输入的文字"
+        }
+      ]
+    },
+    {
+      "id": "app",
+      "name": "应用管理",
+      "commands": [
+        {
+          "id": "force_stop",
+          "name": "强制停止",
+          "widget": "input",
+          "cmd": "shell am force-stop {value}",
+          "paramName": "value",
+          "placeholder": "包名，如 com.example.app"
+        },
+        {
+          "id": "clear_data",
+          "name": "清除数据",
+          "widget": "input",
+          "cmd": "shell pm clear {value}",
+          "paramName": "value",
+          "placeholder": "包名，如 com.example.app",
+          "confirm": true
+        },
+        {
+          "id": "list_apps",
+          "name": "列出已装应用",
+          "widget": "button",
+          "cmd": "shell pm list packages -3"
+        }
+      ]
+    },
+    {
+      "id": "file",
+      "name": "文件传输",
+      "commands": [
+        {
+          "id": "push",
+          "name": "推送文件",
+          "widget": "button",
+          "cmd": "push {local} {remote}",
+          "params": [
+            { "name": "local",  "label": "本地路径", "type": "text", "default": "" },
+            { "name": "remote", "label": "设备路径", "type": "text", "default": "/sdcard/" }
+          ]
+        },
+        {
+          "id": "pull",
+          "name": "拉取文件",
+          "widget": "button",
+          "cmd": "pull {remote} {local}",
+          "params": [
+            { "name": "remote", "label": "设备路径", "type": "text", "default": "/sdcard/" },
+            { "name": "local",  "label": "本地路径", "type": "text", "default": "C:\\Users\\Public\\Desktop\\" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "610_service",
+      "name": "610 服务",
+      "commands": [
+        {
+          "id": "restart_cs",
+          "name": "重启 camera_service",
+          "widget": "button",
+          "cmd": "shell systemctl restart camera_service"
+        },
+        {
+          "id": "restart_bridge",
+          "name": "重启 mo_bridge",
+          "widget": "button",
+          "cmd": "shell systemctl restart mo_bridge"
+        },
+        {
+          "id": "restart_tracker",
+          "name": "重启 tracker",
+          "widget": "button",
+          "cmd": "shell systemctl restart zz_tracker"
+        },
+        {
+          "id": "stop_bridge",
+          "name": "停止 mo_bridge",
+          "widget": "button",
+          "cmd": "shell systemctl stop mo_bridge"
+        }
+      ]
+    },
+    {
+      "id": "610_diag",
+      "name": "610 诊断",
+      "commands": [
+        {
+          "id": "vio_status",
+          "name": "VIO 状态",
+          "widget": "button",
+          "cmd": "shell /hover/bridge/test r"
+        },
+        {
+          "id": "imu_status",
+          "name": "IMU 状态",
+          "widget": "button",
+          "cmd": "shell /hover/bridge/test i"
+        },
+        {
+          "id": "vio_status_grep",
+          "name": "VIO status 精细",
+          "widget": "button",
+          "cmd": "shell \"/hover/bridge/test r | grep status\""
+        },
+        {
+          "id": "temp",
+          "name": "查看 CPU 温度",
+          "widget": "button",
+          "cmd": "shell cat /sys/devices/virtual/thermal/thermal_zone26/temp"
+        },
+        {
+          "id": "cpu_top",
+          "name": "CPU 占用率",
+          "widget": "button",
+          "cmd": "shell top",
+          "stream": true
+        },
+        {
+          "id": "bridge_log",
+          "name": "查看 bridge 日志（实时）",
+          "widget": "button",
+          "cmd": "shell tail -f /hover/log/latest/bridge_log/bridge.std.log",
+          "stream": true
+        },
+        {
+          "id": "check_ttyZ",
+          "name": "查看镜像设备",
+          "widget": "button",
+          "cmd": "shell ls /dev/ttyZ*"
+        },
+        {
+          "id": "check_telem",
+          "name": "检查 telem 口通讯",
+          "widget": "button",
+          "cmd": "shell /hover/bridge/bridge"
+        },
+        {
+          "id": "dis_ver",
+          "name": "查看固件版本",
+          "widget": "button",
+          "cmd": "shell /hover/tests/cli dis_ver"
+        }
+      ]
+    },
+    {
+      "id": "610_config",
+      "name": "610 配置",
+      "commands": [
+        {
+          "id": "set_ip",
+          "name": "设置 IP 地址",
+          "widget": "input",
+          "cmd": "shell \"echo ifconfig eth0 {value} > /persist/ipcfg\"",
+          "paramName": "value",
+          "placeholder": "如 10.76.0.105"
+        },
+        {
+          "id": "set_zoom",
+          "name": "缩放系数",
+          "widget": "input",
+          "cmd": "shell \"echo {value} > /persist/zoom\"",
+          "paramName": "value",
+          "placeholder": "如 3.0"
+        },
+        {
+          "id": "set_bitrate",
+          "name": "视频码率 (kbps)",
+          "widget": "input",
+          "cmd": "shell \"echo {value} > /persist/bitrate\"",
+          "paramName": "value",
+          "placeholder": "如 3000"
+        },
+        {
+          "id": "tcp_port",
+          "name": "开启远程调试端口",
+          "widget": "button",
+          "cmd": "shell setprop persist.adb.tcp.port 5555"
+        },
+        {
+          "id": "adb_disconnect",
+          "name": "断开无线连接",
+          "widget": "input",
+          "cmd": "disconnect {value}",
+          "paramName": "value",
+          "placeholder": "如 192.168.9.202:5555"
+        },
+        {
+          "id": "forcedtrack_on",
+          "name": "强制锁人",
+          "widget": "switch",
+          "cmdOn":  "shell touch /persist/forcedtrack",
+          "cmdOff": "shell rm /persist/forcedtrack"
+        },
+        {
+          "id": "noarmed",
+          "name": "地面识别存图",
+          "widget": "switch",
+          "cmdOn":  "shell touch /persist/noarmed",
+          "cmdOff": "shell rm /persist/noarmed"
+        },
+        {
+          "id": "set_ob_alt_change",
+          "name": "ob 发现目标降高 (m)",
+          "widget": "input",
+          "cmd": "shell \"echo {value} > /persist/ob_alt_change\"",
+          "paramName": "value",
+          "placeholder": "米，负值为爬高"
+        },
+        {
+          "id": "set_ob_ang_max",
+          "name": "ob 停下等待角度 (°)",
+          "widget": "input",
+          "cmd": "shell \"echo {value} > /persist/ob_ang_max\"",
+          "paramName": "value",
+          "placeholder": "默认 45"
+        },
+        {
+          "id": "set_ob_ang_min",
+          "name": "ob 开始靠近角度 (°)",
+          "widget": "input",
+          "cmd": "shell \"echo {value} > /persist/ob_ang_min\"",
+          "paramName": "value",
+          "placeholder": "默认 35"
+        }
+      ]
+    },
+    {
+      "id": "610_camera",
+      "name": "610 摄像",
+      "commands": [
+        {
+          "id": "start_video",
+          "name": "开始录像",
+          "widget": "button",
+          "cmd": "shell /hover/camera_service/camera_client start_video"
+        },
+        {
+          "id": "stop_video",
+          "name": "停止录像",
+          "widget": "button",
+          "cmd": "shell /hover/camera_service/camera_client stop_video"
+        },
+        {
+          "id": "list_videos",
+          "name": "列出录像文件",
+          "widget": "button",
+          "cmd": "shell ls /mnt/media"
+        },
+        {
+          "id": "pull_video",
+          "name": "下载视频",
+          "widget": "button",
+          "cmd": "pull /mnt/media/{filename} {local}",
+          "params": [
+            { "name": "filename", "label": "文件名", "type": "text", "default": "HoverX1-0001.mp4" },
+            { "name": "local",    "label": "本地路径", "type": "text", "default": "C:\\Users\\Public\\Desktop\\" }
+          ]
+        },
+        {
+          "id": "pull_pad_log",
+          "name": "下载 pad 日志",
+          "widget": "button",
+          "cmd": "pull /storage/emulated/0/Android/data/com.example.swarmgroundcontrol/files/logs {local}",
+          "params": [
+            { "name": "local", "label": "本地路径", "type": "text", "default": "C:\\Users\\Public\\Desktop\\logs" }
+          ]
+        }
+      ]
+    }
+  ],
+  "chains": [
+    {
+      "id": "reset_app",
+      "name": "重置应用（停止+清数据）",
+      "params": [{ "name": "pkg", "label": "包名", "type": "text", "default": "com.example.app" }],
+      "steps": [
+        { "cmd": "shell am force-stop {pkg}" },
+        { "cmd": "shell pm clear {pkg}", "waitMs": 500 }
+      ],
+      "confirm": true
+    },
+    {
+      "id": "restart_cs_full",
+      "name": "重启 camera_service + mo_bridge",
+      "steps": [
+        { "cmd": "shell systemctl restart camera_service" },
+        { "cmd": "shell systemctl restart mo_bridge", "waitMs": 1000 }
+      ]
+    },
+    {
+      "id": "update_bridge",
+      "name": "增量更新 bridge 固件",
+      "params": [{ "name": "local_bridge", "label": "本地 bridge 文件路径", "type": "text", "default": "bridge" }],
+      "steps": [
+        { "cmd": "shell systemctl stop mo_bridge" },
+        { "cmd": "push {local_bridge} /hover/bridge/bridge", "waitMs": 500 },
+        { "cmd": "shell chmod +x /hover/bridge/bridge" },
+        { "cmd": "shell /hover/bridge/bridge" }
+      ],
+      "confirm": true
+    },
+    {
+      "id": "update_gimbal",
+      "name": "刷云台固件",
+      "params": [{ "name": "img", "label": "固件文件名（设备上）", "type": "text", "default": "gimbal1.02.img" }],
+      "steps": [
+        { "cmd": "shell systemctl stop mo_bridge" },
+        { "cmd": "shell /hover/bridge/gimbal_update {img}", "waitMs": 500 },
+        { "cmd": "shell systemctl start mo_bridge" }
+      ],
+      "confirm": true
+    },
+    {
+      "id": "imu_cali",
+      "name": "IMU 自动校准",
+      "steps": [
+        { "cmd": "shell /hover/tests/cli imu_auto_cali 0" }
+      ],
+      "confirm": true
+    },
+    {
+      "id": "fix_media_fs",
+      "name": "修复 media 分区只读",
+      "steps": [
+        { "cmd": "shell umount /mnt/media" },
+        { "cmd": "shell mkfs.ext4 /dev/mmcblk0p64", "waitMs": 2000 }
+      ],
+      "confirm": true
+    },
+    {
+      "id": "set_ip_reboot",
+      "name": "改 IP 并重启",
+      "params": [{ "name": "ip", "label": "新 IP 地址", "type": "text", "default": "10.76.0.105" }],
+      "steps": [
+        { "cmd": "shell \"echo ifconfig eth0 {ip} > /persist/ipcfg\"" },
+        { "cmd": "shell cat /persist/ipcfg", "waitMs": 300 },
+        { "cmd": "shell reboot -f" }
+      ],
+      "confirm": true
+    }
+  ]
+}

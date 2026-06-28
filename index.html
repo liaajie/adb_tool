@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'">
+<title>ADB Tool</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', sans-serif; font-size: 13px; background: #1e1e1e; color: #d4d4d4; height: 100vh; display: flex; flex-direction: column; overflow: hidden; user-select: none; }
+
+/* Top bar */
+#topbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #2d2d2d; border-bottom: 1px solid #3e3e3e; flex-shrink: 0; }
+#topbar select { background: #3c3c3c; color: #d4d4d4; border: 1px solid #555; border-radius: 4px; padding: 4px 8px; height: 28px; min-width: 180px; }
+.btn { background: #3c3c3c; color: #d4d4d4; border: 1px solid #555; border-radius: 4px; padding: 4px 10px; height: 28px; cursor: pointer; font-size: 12px; transition: background .15s; }
+.btn:hover { background: #4a4a4a; }
+.btn.primary { background: #0e639c; border-color: #1177bb; }
+.btn.primary:hover { background: #1177bb; }
+.btn.active { background: #007acc; border-color: #007acc; color: #fff; }
+.btn.danger { background: #5a1a1a; border-color: #8b2020; }
+.btn.danger:hover { background: #8b2020; }
+.sep { width: 1px; height: 20px; background: #3e3e3e; margin: 0 4px; }
+#device-status { font-size: 11px; color: #888; }
+
+/* Main layout */
+#main { display: flex; flex: 1; overflow: hidden; }
+
+/* Sidebar */
+#sidebar { width: 180px; background: #252526; border-right: 1px solid #3e3e3e; display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden; }
+#sidebar-title { padding: 8px 12px 6px; font-size: 11px; color: #bbb; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid #3e3e3e; display: flex; align-items: center; justify-content: space-between; }
+#groups-list { flex: 1; overflow-y: auto; }
+.group-item { padding: 8px 12px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #2d2d2d; }
+.group-item:hover { background: #2d2d2d; }
+.group-item.active { background: #094771; color: #fff; }
+.group-item .group-actions { opacity: 0; display: flex; gap: 2px; }
+.group-item:hover .group-actions { opacity: 1; }
+.icon-btn { background: none; border: none; color: #888; cursor: pointer; padding: 2px 4px; border-radius: 3px; font-size: 12px; }
+.icon-btn:hover { background: #3e3e3e; color: #d4d4d4; }
+#chains-section { border-top: 1px solid #3e3e3e; padding: 6px 0; }
+.chains-title { padding: 4px 12px; font-size: 11px; color: #888; }
+
+/* Content area */
+#content { flex: 1; overflow-y: auto; padding: 12px; }
+#content-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+#content-title { font-size: 14px; font-weight: 600; }
+#cmd-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.cmd-card { background: #2d2d2d; border: 1px solid #3e3e3e; border-radius: 6px; padding: 12px; cursor: default; }
+.cmd-card:hover { border-color: #555; }
+.cmd-card.drag-over { border-color: #007acc; background: #1e3a52; }
+.cmd-card.drag-before { border-left: 3px solid #007acc; }
+.cmd-card.drag-after  { border-right: 3px solid #007acc; }
+.cmd-card.dragging { opacity: .4; }
+.cmd-name { font-weight: 500; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
+.cmd-name > span:first-child { flex: 1; }
+.card-actions { opacity: 0; display: flex; gap: 2px; }
+.cmd-card:hover .card-actions { opacity: 1; }
+
+/* Widgets */
+.widget-row { display: flex; align-items: center; gap: 8px; }
+.widget-btn { background: #0e639c; color: #fff; border: none; border-radius: 4px; padding: 5px 14px; cursor: pointer; font-size: 12px; width: 100%; }
+.widget-btn:hover { background: #1177bb; }
+.widget-btn.danger-btn { background: #6a1b1b; }
+.widget-btn.danger-btn:hover { background: #8b2020; }
+input[type=range] { flex: 1; accent-color: #007acc; }
+.slider-val { min-width: 30px; text-align: right; color: #9cdcfe; font-size: 12px; font-family: monospace; }
+.toggle-wrap { display: flex; align-items: center; gap: 8px; }
+.toggle { position: relative; display: inline-block; width: 38px; height: 20px; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.slider-track { position: absolute; inset: 0; background: #3c3c3c; border-radius: 20px; cursor: pointer; transition: .2s; }
+.toggle input:checked + .slider-track { background: #007acc; }
+.slider-track:before { content: ''; position: absolute; height: 14px; width: 14px; left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+.toggle input:checked + .slider-track:before { transform: translateX(18px); }
+.input-widget { display: flex; gap: 6px; }
+.input-widget input[type=text] { flex: 1; background: #3c3c3c; border: 1px solid #555; border-radius: 4px; padding: 4px 8px; color: #d4d4d4; font-size: 12px; }
+.input-widget input[type=text]:focus { outline: none; border-color: #007acc; }
+.widget-select { width: 100%; background: #3c3c3c; border: 1px solid #555; border-radius: 4px; padding: 5px 8px; color: #d4d4d4; font-size: 12px; cursor: pointer; }
+.params-form { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.params-form label { font-size: 11px; color: #888; }
+.params-form input { background: #3c3c3c; border: 1px solid #555; border-radius: 4px; padding: 4px 8px; color: #d4d4d4; font-size: 12px; width: 100%; }
+.params-form input:focus { outline: none; border-color: #007acc; }
+
+/* Output panel */
+#output { background: #1a1a1a; border-top: 1px solid #3e3e3e; height: 140px; display: flex; flex-direction: column; flex-shrink: 0; transition: height .2s; }
+#output.collapsed { height: 26px; }
+#output-resize { height: 5px; cursor: ns-resize; background: transparent; flex-shrink: 0; }
+#output-resize:hover, #output-resize.dragging { background: #007acc; }
+#output-header { display: flex; align-items: center; justify-content: space-between; padding: 4px 10px; border-bottom: 1px solid #2d2d2d; flex-shrink: 0; }
+#output-header span { font-size: 11px; color: #888; }
+#output-log { flex: 1; overflow-y: auto; padding: 6px 10px; font-family: Consolas, monospace; font-size: 12px; line-height: 1.5; }
+.log-cmd  { color: #569cd6; }
+.log-ok   { color: #4ec94e; }
+.log-err  { color: #f44747; }
+.log-info { color: #888; }
+
+/* Modal */
+#modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; z-index: 100; }
+#modal.hidden { display: none; }
+#modal-box { background: #2d2d2d; border: 1px solid #555; border-radius: 8px; width: 480px; max-height: 80vh; overflow-y: auto; }
+#modal-title { padding: 14px 16px 12px; font-weight: 600; border-bottom: 1px solid #3e3e3e; }
+#modal-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.field label { display: block; font-size: 11px; color: #888; margin-bottom: 4px; }
+.field input, .field select, .field textarea { width: 100%; background: #3c3c3c; border: 1px solid #555; border-radius: 4px; padding: 6px 8px; color: #d4d4d4; font-size: 12px; }
+.field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: #007acc; }
+.field textarea { resize: vertical; min-height: 56px; font-family: Consolas, monospace; }
+#modal-footer { padding: 10px 16px 14px; display: flex; gap: 8px; justify-content: flex-end; border-top: 1px solid #3e3e3e; }
+.widget-help { font-size: 11px; color: #666; margin-top: 4px; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #3e3e3e; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- Top bar -->
+<div id="topbar">
+  <select id="device-select"><option value="">-- 选择设备 --</option></select>
+  <button class="btn" id="btn-refresh" title="刷新设备列表">↻ 刷新</button>
+  <span class="sep"></span>
+  <button class="btn" onclick="adb.importConfig().then(cfg => cfg && (config = cfg, render()))">导入</button>
+  <button class="btn" onclick="adb.exportConfig()">导出</button>
+  <button class="btn danger" onclick="confirmReset()">重置</button>
+  <span class="sep"></span>
+  <span id="device-status">未检测到设备</span>
+</div>
+
+<!-- Main -->
+<div id="main">
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <div id="sidebar-title">
+      分组
+      <button class="icon-btn" title="添加分组" onclick="openGroupModal()">＋</button>
+    </div>
+    <div id="groups-list"></div>
+    <div id="chains-section"></div>
+  </div>
+
+  <!-- Content -->
+  <div id="content">
+    <div id="content-header">
+      <span id="content-title">请选择分组</span>
+      <div style="display:flex;gap:6px">
+        <button class="btn primary edit-btn" id="btn-add" onclick="openAddModal()">＋ 添加指令</button>
+      </div>
+    </div>
+    <div id="cmd-cards"></div>
+  </div>
+</div>
+
+<!-- Output -->
+<div id="output-resize"></div>
+<div id="output">
+  <div id="output-header">
+    <span>输出</span>
+    <div style="display:flex;gap:6px">
+      <button class="icon-btn" onclick="clearOutput()" title="清空">✕</button>
+      <button class="icon-btn" id="btn-expand" onclick="expandOutput()" title="全屏展开">⤢</button>
+      <button class="icon-btn" id="btn-collapse" onclick="toggleOutput()" title="折叠">▼</button>
+    </div>
+  </div>
+  <div id="output-log"></div>
+</div>
+
+<!-- Modal -->
+<div id="modal" class="hidden">
+  <div id="modal-box">
+    <div id="modal-title">编辑指令</div>
+    <div id="modal-body"></div>
+    <div id="modal-footer">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn primary" id="modal-save" onclick="saveModal()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script src="renderer.js"></script>
+</body>
+</html>
