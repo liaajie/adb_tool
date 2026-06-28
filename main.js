@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron')
 const { exec, spawn } = require('child_process')
 const path = require('path')
 const fs = require('fs')
+const net = require('net')
 
 const CONFIG_PATH = path.join(app.getPath('userData'), 'commands.json')
 
@@ -11,6 +12,8 @@ function getDefaultConfig() {
   // packaged path
   return path.join(process.resourcesPath, 'default-commands.json')
 }
+
+const resolveConfig = () => fs.existsSync(CONFIG_PATH) ? CONFIG_PATH : getDefaultConfig()
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -40,8 +43,11 @@ ipcMain.handle('adb:devices', () => new Promise(resolve => {
   exec(`"${adbPath}" devices`, (err, stdout) => {
     if (err) return resolve([])
     const devices = stdout.trim().split('\n').slice(1)
-      .filter(l => l.includes('\tdevice'))
-      .map(l => ({ serial: l.split('\t')[0].trim() }))
+      .map(l => {
+        const [serial, status] = l.split('\t').map(s => s?.trim())
+        return serial && status ? { serial, status } : null
+      })
+      .filter(Boolean)
     resolve(devices)
   })
 }))
@@ -69,9 +75,22 @@ ipcMain.on('adb:stream', (event, { id, cmd, serial }) => {
 
 ipcMain.on('adb:stream:kill', (_, id) => { activeStreams.get(id)?.kill(); activeStreams.delete(id) })
 
+// TCP 端口探测,用于自动连接的"心跳"判定
+ipcMain.handle('net:probe', (_, { hosts, port, timeoutMs }) => {
+  return Promise.all(hosts.map(host => new Promise(resolve => {
+    const sock = new net.Socket()
+    let done = false
+    const finish = ok => { if (!done) { done = true; sock.destroy(); resolve({ host, ok }) } }
+    sock.setTimeout(timeoutMs)
+    sock.once('connect', () => finish(true))
+    sock.once('timeout', () => finish(false))
+    sock.once('error', () => finish(false))
+    sock.connect(port, host)
+  })))
+})
+
 ipcMain.handle('config:load', () => {
-  const src = fs.existsSync(CONFIG_PATH) ? CONFIG_PATH : getDefaultConfig()
-  return JSON.parse(fs.readFileSync(src, 'utf8'))
+  return JSON.parse(fs.readFileSync(resolveConfig(), 'utf8'))
 })
 
 ipcMain.handle('config:save', (_, config) => {
@@ -87,8 +106,7 @@ ipcMain.handle('config:export', async () => {
     filters: [{ name: 'JSON', extensions: ['json'] }],
   })
   if (!filePath) return false
-  const src = fs.existsSync(CONFIG_PATH) ? CONFIG_PATH : getDefaultConfig()
-  fs.copyFileSync(src, filePath)
+  fs.copyFileSync(resolveConfig(), filePath)
   return true
 })
 

@@ -2,25 +2,210 @@ let config = { groups: [], chains: [] }
 let currentGroupId = null
 let modalContext = null   // { mode:'cmd'|'group', groupId, cmdId }
 let outputCollapsed = false
+let outputExpanded = false
+let prevOutputH = ''
+let currentSerial = null
+let knownDevices = []     // 上一次 poll 的结果,缓存用
+let autoTimer = null
+const failCounts = new Map()   // ip -> consecutive fail count
+
+function defaultAutoConnect() {
+  return {
+    enabled: false,
+    probePort: 8888,
+    rangeStart: 101,
+    rangeEnd: 115,
+    intervalMs: 3000,
+    timeoutMs: 300,
+    failsBeforeDisconnect: 2,
+  }
+}
 
 // ── Startup ──────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
   config = await adb.loadConfig()
+  if (!config.network) config.network = { subnetPrefix: '192.168.1.', port: 5555 }
+  if (!config.network.autoConnect) config.network.autoConnect = defaultAutoConnect()
   render()
   pollDevices()
   setInterval(pollDevices, 4000)
+  if (config.network.autoConnect.enabled) startAutoConnect()
 })
 
 async function pollDevices() {
-  const devices = await adb.devices()
-  const sel = document.getElementById('device-select')
-  const prev = sel.value
-  sel.innerHTML = '<option value="">-- 选择设备 --</option>' +
-    devices.map(d => `<option value="${esc(d.serial)}">${esc(d.serial)}</option>`).join('')
-  if (prev && devices.find(d => d.serial === prev)) sel.value = prev
+  knownDevices = await adb.devices()
+  // 当前选中的设备掉了 → 自动取消选中
+  if (currentSerial && !knownDevices.find(d => d.serial === currentSerial)) currentSerial = null
+  // 没选 → 默认选第一个 online 的
+  if (!currentSerial) currentSerial = knownDevices.find(d => d.status === 'device')?.serial || null
+  renderDevices()
+}
+
+function renderDevices() {
+  const wrap = document.getElementById('device-chips')
+  const online = knownDevices.filter(d => d.status === 'device').length
+  wrap.innerHTML = knownDevices.map(d => {
+    const isWifi = /^[\d.]+:\d+$/.test(d.serial)
+    const label = deviceLabel(d.serial)
+    const cls = ['device-chip', d.status === 'device' ? '' : d.status,
+                 d.serial === currentSerial ? 'active' : '',
+                 isWifi ? '' : 'no-x'].filter(Boolean).join(' ')
+    const x = isWifi
+      ? `<button class="chip-x" onclick="event.stopPropagation();disconnectDevice('${esc(d.serial)}')" title="断开">×</button>`
+      : ''
+    return `<span class="${cls}" title="${esc(d.serial)} (${d.status})"
+              onclick="selectDevice('${esc(d.serial)}')">
+        <span class="chip-kind">${isWifi ? '📡' : '🔌'}</span>${esc(label)}${x}</span>`
+  }).join('') +
+  `<button class="btn" id="btn-add-device" onclick="openConnectModal()">+ 连接</button>`
+
   const st = document.getElementById('device-status')
-  st.textContent = devices.length ? `${devices.length} 台设备在线` : '未检测到设备'
-  st.style.color = devices.length ? '#4ec94e' : '#888'
+  st.textContent = online ? `${online} 台在线` : '未检测到设备'
+  st.style.color = online ? '#4ec94e' : '#888'
+}
+
+function deviceLabel(serial) {
+  const prefix = config.network?.subnetPrefix || '192.168.1.'
+  // 同网段 IP:port → 只显示末位
+  const m = serial.startsWith(prefix) && serial.match(/\.(\d+):\d+$/)
+  if (m) return '.' + m[1]
+  // 其他网段 IP:port → 显示完整 IP(去 port)
+  const m2 = serial.match(/^([\d.]+):\d+$/)
+  if (m2) return m2[1]
+  // USB serial → 截短
+  return serial.length > 10 ? serial.slice(0, 8) + '…' : serial
+}
+
+function selectDevice(serial) {
+  currentSerial = serial
+  renderDevices()
+}
+
+async function disconnectDevice(serial) {
+  log('cmd', `▶ 断开: adb disconnect ${serial}`)
+  const r = await adb.run(`disconnect ${serial}`, null)
+  if (r.stdout) log('ok', r.stdout.trim())
+  if (r.stderr) log('err', r.stderr.trim())
+  pollDevices()
+}
+
+function openConnectModal() {
+  modalContext = { mode: 'connect' }
+  const prefix = config.network?.subnetPrefix || '192.168.1.'
+  const port = config.network?.port || 5555
+  const ac = config.network.autoConnect
+  document.getElementById('modal-title').textContent = '连接无线设备'
+  document.getElementById('modal-body').innerHTML = `
+    <div class="field"><label>IP 末位(网段 ${esc(prefix)}x:${port})</label>
+      <input id="f_ip_tail" type="text" placeholder="如 105" autofocus
+        onkeydown="if(event.key==='Enter')saveModal()"></div>
+    <div class="field"><label>或完整地址 IP:port(覆盖上面)</label>
+      <input id="f_ip_full" type="text" placeholder="如 10.76.0.105:5555"></div>
+    <div class="field"><label>网段前缀</label>
+      <input id="f_subnet" value="${esc(prefix)}"></div>
+    <div class="field"><label>默认端口</label>
+      <input id="f_port" type="number" value="${port}"></div>
+    <div class="auto-section">
+      <div class="field"><label style="font-size:12px;color:#d4d4d4">⚙ 自动连接设置(扫 8888 端口)</label></div>
+      <div class="field"><div class="row">
+        <div><label>起始末位</label><input id="f_ac_start" type="number" value="${ac.rangeStart}"></div>
+        <div><label>结束末位</label><input id="f_ac_end" type="number" value="${ac.rangeEnd}"></div>
+      </div></div>
+      <div class="field"><div class="row">
+        <div><label>心跳端口</label><input id="f_ac_port" type="number" value="${ac.probePort}"></div>
+        <div><label>扫描间隔(ms)</label><input id="f_ac_interval" type="number" value="${ac.intervalMs}"></div>
+      </div></div>
+      <div class="field"><div class="row">
+        <div><label>探测超时(ms)</label><input id="f_ac_timeout" type="number" value="${ac.timeoutMs}"></div>
+        <div><label>断开容忍次数</label><input id="f_ac_fails" type="number" value="${ac.failsBeforeDisconnect}"></div>
+      </div></div>
+    </div>`
+  document.getElementById('modal').classList.remove('hidden')
+}
+
+async function doConnect(addr, silent) {
+  if (!silent) log('cmd', `▶ 连接: adb connect ${addr}`)
+  const r = await adb.run(`connect ${addr}`, null)
+  if (!silent) {
+    if (r.stdout) log(/already|connected/i.test(r.stdout) ? 'ok' : 'info', r.stdout.trim())
+    if (r.stderr) log('err', r.stderr.trim())
+  }
+  pollDevices()
+}
+
+// ── Auto-connect (TCP probe to 8888) ──────────────────────────────────────────
+function toggleAutoConnect() {
+  const ac = config.network.autoConnect
+  ac.enabled = !ac.enabled
+  adb.saveConfig(config)
+  if (ac.enabled) startAutoConnect()
+  else stopAutoConnect()
+}
+
+function startAutoConnect() {
+  if (autoTimer) return
+  const ac = config.network.autoConnect
+  document.getElementById('btn-auto').classList.add('active')
+  runAutoProbe()
+  autoTimer = setInterval(runAutoProbe, ac.intervalMs || 3000)
+}
+
+function stopAutoConnect() {
+  clearInterval(autoTimer)
+  autoTimer = null
+  failCounts.clear()
+  const btn = document.getElementById('btn-auto')
+  btn.classList.remove('active', 'scanning')
+  btn.textContent = '🔄 自动'
+}
+
+async function runAutoProbe() {
+  const ac = config.network.autoConnect
+  const prefix = config.network.subnetPrefix || '192.168.1.'
+  const adbPort = config.network.port || 5555
+  const hosts = []
+  for (let i = ac.rangeStart; i <= ac.rangeEnd; i++) hosts.push(prefix + i)
+
+  const btn = document.getElementById('btn-auto')
+  btn.classList.add('scanning')
+  const results = await adb.probe(hosts, ac.probePort, ac.timeoutMs)
+  btn.classList.remove('scanning')
+
+  const reachable = new Set(results.filter(r => r.ok).map(r => r.host))
+  btn.textContent = `🔄 自动 ${reachable.size}/${hosts.length}`
+
+  // 当前 adb 状态,按 IP 索引
+  const adbByIp = new Map()
+  knownDevices.forEach(d => {
+    const m = d.serial.match(/^([\d.]+):\d+$/)
+    if (m) adbByIp.set(m[1], d.status)
+  })
+
+  // 通的 → 没连就连,offline 就重连
+  for (const host of reachable) {
+    failCounts.delete(host)
+    const status = adbByIp.get(host)
+    const addr = `${host}:${adbPort}`
+    if (!status) {
+      doConnect(addr, true)
+    } else if (status !== 'device') {
+      await adb.run(`disconnect ${addr}`, null)
+      doConnect(addr, true)
+    }
+  }
+
+  // 不通的 → 计数,达阈值则断开
+  for (const host of hosts) {
+    if (reachable.has(host)) continue
+    const cur = (failCounts.get(host) || 0) + 1
+    failCounts.set(host, cur)
+    if (cur >= ac.failsBeforeDisconnect && adbByIp.has(host)) {
+      await adb.run(`disconnect ${host}:${adbPort}`, null)
+      failCounts.delete(host)
+    }
+  }
+
+  pollDevices()
 }
 
 document.getElementById('btn-refresh').onclick = pollDevices
@@ -91,28 +276,21 @@ function renderWidget(cmd, groupId) {
 
 function renderButtonWidget(cmd, groupId, id) {
   const isDanger = cmd.confirm
-  const hasParams = cmd.params?.length
   let html = `<button class="widget-btn ${isDanger ? 'danger-btn' : ''}"
     onclick="handleButton('${cmd.id}','${groupId}')">${esc(cmd.name)}</button>`
-  if (hasParams) {
-    html += `<div class="params-form" id="pf_${cmd.id}">`
-    html += cmd.params.map(p => `
-      <label>${esc(p.label)}</label>
-      <input type="text" id="param_${cmd.id}_${p.name}"
-        value="${esc(p.default || '')}" placeholder="${esc(p.label)}">
-    `).join('')
-    html += '</div>'
-  }
+  if (cmd.params?.length) html += renderParams(cmd.params, 'param', cmd.id)
   return html
 }
 
 function renderSliderWidget(cmd, groupId, id) {
+  const min = cmd.min || 0, max = cmd.max || 100
+  const mid = Math.round((min + max) / 2)
   return `<div class="widget-row">
-    <input type="range" id="${id}" min="${cmd.min||0}" max="${cmd.max||100}" step="${cmd.step||1}"
-      value="${Math.round((cmd.min||0)+((cmd.max||100)-(cmd.min||0))/2)}"
+    <input type="range" id="${id}" min="${min}" max="${max}" step="${cmd.step||1}"
+      value="${mid}"
       oninput="document.getElementById('lbl_${cmd.id}').textContent=this.value"
       onchange="runSlider('${cmd.id}','${groupId}',this.value)">
-    <span class="slider-val" id="lbl_${cmd.id}">${Math.round((cmd.min||0)+((cmd.max||100)-(cmd.min||0))/2)}</span>
+    <span class="slider-val" id="lbl_${cmd.id}">${mid}</span>
   </div>`
 }
 
@@ -154,22 +332,31 @@ function renderChainCard(chain) {
         <button class="icon-btn" onclick="deleteChain('${chain.id}')" title="删除">✕</button>
       </span>
     </div>`
-  if (chain.params?.length) {
-    html += `<div class="params-form">`
-    html += chain.params.map(p => `
-      <label>${esc(p.label)}</label>
-      <input type="text" id="cp_${chain.id}_${p.name}"
-        value="${esc(p.default||'')}" placeholder="${esc(p.label)}">
-    `).join('')
-    html += `</div>`
-  }
+  if (chain.params?.length) html += renderParams(chain.params, 'cp', chain.id)
   html += `<button class="widget-btn danger-btn" style="margin-top:8px"
     onclick="runChain('${chain.id}')">执行组合</button></div>`
   return html
 }
 
+function renderParams(params, prefix, entityId) {
+  return `<div class="params-form">` + params.map(p => `
+      <label>${esc(p.label)}</label>
+      <input type="text" id="${prefix}_${entityId}_${p.name}"
+        value="${esc(p.default || '')}" placeholder="${esc(p.label)}">
+    `).join('') + `</div>`
+}
+
+function collectParams(params, prefix, entityId) {
+  const values = {}
+  params?.forEach(p => {
+    const el = document.getElementById(`${prefix}_${entityId}_${p.name}`)
+    values[p.name] = el ? el.value : (p.default || '')
+  })
+  return values
+}
+
 // ── Command execution ─────────────────────────────────────────────────────────
-function serial() { return document.getElementById('device-select').value || null }
+function serial() { return currentSerial }
 
 function fillParams(cmd, values) {
   return Object.entries(values).reduce((s, [k, v]) =>
@@ -181,15 +368,9 @@ async function handleButton(cmdId, groupId) {
   if (!cmd) return
   if (cmd.confirm && !confirm(`确认执行：${cmd.name}？`)) return
 
-  let resolved = cmd.cmd
-  if (cmd.params?.length) {
-    const values = {}
-    for (const p of cmd.params) {
-      const el = document.getElementById(`param_${cmdId}_${p.name}`)
-      values[p.name] = el ? el.value : (p.default || '')
-    }
-    resolved = fillParams(resolved, values)
-  }
+  const resolved = cmd.params?.length
+    ? fillParams(cmd.cmd, collectParams(cmd.params, 'param', cmdId))
+    : cmd.cmd
   await execute(resolved, cmd.name, cmd.stream)
 }
 
@@ -224,11 +405,7 @@ async function runChain(chainId) {
   if (!chain) return
   if (chain.confirm && !confirm(`确认执行：${chain.name}？`)) return
 
-  const values = {}
-  chain.params?.forEach(p => {
-    const el = document.getElementById(`cp_${chainId}_${p.name}`)
-    values[p.name] = el ? el.value : (p.default || '')
-  })
+  const values = collectParams(chain.params, 'cp', chainId)
 
   for (const step of chain.steps) {
     const cmd = fillParams(step.cmd, values)
@@ -242,20 +419,21 @@ async function execute(cmd, label, stream) {
   log('cmd', `▶ ${label}: adb ${cmd}`)
   if (stream) {
     const id = uid()
+    const logEl = document.getElementById('output-log')
     const div = document.createElement('div')
     div.className = 'log-ok'
-    document.getElementById('output-log').appendChild(div)
+    logEl.appendChild(div)
     const stopBtn = document.createElement('button')
     stopBtn.className = 'btn danger'
     stopBtn.style.cssText = 'margin:4px 0;font-size:11px;height:22px;padding:0 8px'
     stopBtn.textContent = '■ 停止'
     stopBtn.onclick = () => adb.streamKill(id)
-    document.getElementById('output-log').appendChild(stopBtn)
-    document.getElementById('output-log').scrollTop = 9999
+    logEl.appendChild(stopBtn)
+    logEl.scrollTop = 9999
     adb.stream(id, cmd, serial(), msg => {
-      if (msg.type === 'data') { div.textContent += msg.data; document.getElementById('output-log').scrollTop = 9999 }
+      if (msg.type === 'data') { div.textContent += msg.data; logEl.scrollTop = 9999 }
       else if (msg.type === 'err') { log('err', msg.data.trim()) }
-      else { stopBtn.remove() }
+      else { stopBtn.remove(); adb.streamKill(id) }   // ponytail: 自然结束也要清监听器,否则闭包持有 div 泄漏
     })
     return
   }
@@ -286,16 +464,16 @@ function toggleOutput() {
 
 function expandOutput() {
   const output = document.getElementById('output')
-  const expanded = output.dataset.expanded === '1'
-  if (expanded) {
-    output.style.height = output.dataset.prevH || '140px'
-    output.dataset.expanded = ''
-    document.getElementById('btn-expand').textContent = '⤢'
+  const btn = document.getElementById('btn-expand')
+  if (outputExpanded) {
+    output.style.height = prevOutputH || '140px'
+    outputExpanded = false
+    btn.textContent = '⤢'
   } else {
-    output.dataset.prevH = output.style.height || '140px'
+    prevOutputH = output.style.height || '140px'
     output.style.height = (window.innerHeight - 60) + 'px'
-    output.dataset.expanded = '1'
-    document.getElementById('btn-expand').textContent = '⤡'
+    outputExpanded = true
+    btn.textContent = '⤡'
     if (outputCollapsed) { outputCollapsed = false; output.classList.remove('collapsed') }
   }
 }
@@ -428,38 +606,57 @@ function deleteChain(chainId) {
 
 function saveModal() {
   if (!modalContext) return
+  const parseLines = s => s.split('\n').map(l => l.trim()).filter(Boolean)
+  const upsert = (arr, item) => {
+    const i = arr.findIndex(x => x.id === item.id)
+    if (i >= 0) arr[i] = item; else arr.push(item)
+  }
+
+  if (modalContext.mode === 'connect') {
+    const subnet = document.getElementById('f_subnet').value.trim() || '192.168.1.'
+    const port = +document.getElementById('f_port').value || 5555
+    const full = document.getElementById('f_ip_full').value.trim()
+    const tail = document.getElementById('f_ip_tail').value.trim()
+    const ac = config.network.autoConnect
+    ac.rangeStart            = +document.getElementById('f_ac_start').value    || ac.rangeStart
+    ac.rangeEnd              = +document.getElementById('f_ac_end').value      || ac.rangeEnd
+    ac.probePort             = +document.getElementById('f_ac_port').value     || ac.probePort
+    ac.intervalMs            = +document.getElementById('f_ac_interval').value || ac.intervalMs
+    ac.timeoutMs             = +document.getElementById('f_ac_timeout').value  || ac.timeoutMs
+    ac.failsBeforeDisconnect = +document.getElementById('f_ac_fails').value    || ac.failsBeforeDisconnect
+    config.network = { ...config.network, subnetPrefix: subnet, port }
+    adb.saveConfig(config)
+    // 设置变了 → 如果当前自动开着,重启计时器以应用新间隔
+    if (autoTimer) { stopAutoConnect(); startAutoConnect() }
+    const addr = full || (tail ? `${subnet}${tail}:${port}` : '')
+    closeModal()
+    if (addr) doConnect(addr)
+    return
+  }
+
   if (modalContext.mode === 'group') {
     const name = document.getElementById('f_gname').value.trim()
     if (!name) return
-    if (modalContext.groupId) {
-      const g = config.groups.find(g => g.id === modalContext.groupId)
-      if (g) g.name = name
-    } else {
-      config.groups.push({ id: uid(), name, commands: [] })
-    }
+    upsert(config.groups, modalContext.groupId
+      ? { ...config.groups.find(g => g.id === modalContext.groupId), name }
+      : { id: uid(), name, commands: [] })
   } else if (modalContext.mode === 'chain') {
     const name = document.getElementById('f_cname').value.trim()
     const stepsRaw = document.getElementById('f_steps').value.trim()
     if (!name || !stepsRaw) return
-    const steps = stepsRaw.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
+    const steps = parseLines(stepsRaw).map(l => {
       const [cmd, wait] = l.split('@@')
       return wait ? { cmd: cmd.trim(), waitMs: +wait } : { cmd: cmd.trim() }
     })
-    const paramsRaw = document.getElementById('f_params').value.trim()
-    const params = paramsRaw ? paramsRaw.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
+    const params = parseLines(document.getElementById('f_params').value).map(l => {
       const [name, label, def] = l.split(':')
       return { name: name.trim(), label: (label||name).trim(), type: 'text', default: (def||'').trim() }
-    }) : []
+    })
     const obj = { id: modalContext.chainId || uid(), name, steps,
       confirm: document.getElementById('f_cconfirm').checked }
     if (params.length) obj.params = params
-    if (modalContext.chainId) {
-      const idx = config.chains.findIndex(c => c.id === modalContext.chainId)
-      if (idx >= 0) config.chains[idx] = obj
-    } else {
-      if (!config.chains) config.chains = []
-      config.chains.push(obj)
-    }
+    if (!config.chains) config.chains = []
+    upsert(config.chains, obj)
     adb.saveConfig(config)
     closeModal()
     selectChainGroup()
@@ -488,12 +685,7 @@ function saveModal() {
 
     const group = config.groups.find(g => g.id === modalContext.groupId)
     if (!group) return
-    if (modalContext.cmdId) {
-      const idx = group.commands.findIndex(c => c.id === modalContext.cmdId)
-      if (idx >= 0) group.commands[idx] = obj
-    } else {
-      group.commands.push(obj)
-    }
+    upsert(group.commands, obj)
   }
 
   adb.saveConfig(config)

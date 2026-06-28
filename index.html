@@ -9,7 +9,7 @@
 body { font-family: 'Segoe UI', sans-serif; font-size: 13px; background: #1e1e1e; color: #d4d4d4; height: 100vh; display: flex; flex-direction: column; overflow: hidden; user-select: none; }
 
 /* Top bar */
-#topbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #2d2d2d; border-bottom: 1px solid #3e3e3e; flex-shrink: 0; }
+#topbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #2d2d2d; border-bottom: 1px solid #3e3e3e; flex-shrink: 0; flex-wrap: wrap; }
 #topbar select { background: #3c3c3c; color: #d4d4d4; border: 1px solid #555; border-radius: 4px; padding: 4px 8px; height: 28px; min-width: 180px; }
 .btn { background: #3c3c3c; color: #d4d4d4; border: 1px solid #555; border-radius: 4px; padding: 4px 10px; height: 28px; cursor: pointer; font-size: 12px; transition: background .15s; }
 .btn:hover { background: #4a4a4a; }
@@ -20,6 +20,29 @@ body { font-family: 'Segoe UI', sans-serif; font-size: 13px; background: #1e1e1e
 .btn.danger:hover { background: #8b2020; }
 .sep { width: 1px; height: 20px; background: #3e3e3e; margin: 0 4px; }
 #device-status { font-size: 11px; color: #888; }
+
+/* Device chips */
+#device-chips { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: 1; }
+.device-chip { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 4px 0 10px;
+  background: #3c3c3c; border: 1px solid #4ec94e; border-radius: 13px; font-size: 12px;
+  cursor: pointer; color: #d4d4d4; transition: background .15s; user-select: none; }
+.device-chip:hover { background: #4a4a4a; }
+.device-chip.active { background: #094771; border-color: #007acc; color: #fff; }
+.device-chip.offline { border-color: #666; color: #888; }
+.device-chip.unauthorized { border-color: #d4a814; color: #d4a814; }
+.device-chip .chip-kind { font-size: 10px; opacity: .7; }
+.device-chip .chip-x { background: none; border: none; color: inherit; cursor: pointer;
+  font-size: 14px; padding: 0 4px; opacity: .5; line-height: 1; }
+.device-chip .chip-x:hover { opacity: 1; color: #f44747; }
+.device-chip.no-x { padding-right: 10px; }
+#btn-add-device { height: 26px; border-radius: 13px; padding: 0 10px; font-size: 12px; }
+#btn-auto.active { background: #0e639c; border-color: #1177bb; color: #fff; }
+#btn-auto.scanning { animation: pulse 1.2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.55} }
+.auto-section { border-top: 1px dashed #555; margin-top: 8px; padding-top: 10px; }
+.auto-section .row { display:flex; gap:6px; align-items:center; }
+.auto-section .row > * { flex: 1; }
+.auto-section label { font-size: 11px; color: #888; }
 
 /* Main layout */
 #main { display: flex; flex: 1; overflow: hidden; }
@@ -114,8 +137,9 @@ input[type=range] { flex: 1; accent-color: #007acc; }
 
 <!-- Top bar -->
 <div id="topbar">
-  <select id="device-select"><option value="">-- 选择设备 --</option></select>
-  <button class="btn" id="btn-refresh" title="刷新设备列表">↻ 刷新</button>
+  <div id="device-chips"></div>
+  <button class="btn" id="btn-auto" onclick="toggleAutoConnect()" title="自动连接(扫描 8888 端口)">🔄 自动</button>
+  <button class="btn" id="btn-refresh" title="刷新设备列表">↻</button>
   <span class="sep"></span>
   <button class="btn" onclick="adb.importConfig().then(cfg => cfg && (config = cfg, render()))">导入</button>
   <button class="btn" onclick="adb.exportConfig()">导出</button>
