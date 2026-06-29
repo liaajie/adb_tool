@@ -35,7 +35,13 @@ function sanitize(v) {
   return String(v).replace(/[;&|`$<>\\]/g, '')
 }
 
-let adbPath = 'adb'
+let adbPath = (() => {
+  // 打包后在 resources/adb/adb.exe;开发期在项目 adb/adb.exe
+  const bundled = app.isPackaged
+    ? path.join(process.resourcesPath, 'adb', 'adb.exe')
+    : path.join(__dirname, 'adb', 'adb.exe')
+  return fs.existsSync(bundled) ? bundled : 'adb'
+})()
 
 ipcMain.handle('adb:setPath', (_, p) => { adbPath = p || 'adb' })
 

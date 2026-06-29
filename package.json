@@ -5,7 +5,9 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win"
+    "dist": "electron-builder --win",
+    "dist:portable": "electron-builder --win dir",
+    "portable": "node build-portable.js"
   },
   "devDependencies": {
     "electron": "^31.7.7",
@@ -15,14 +17,17 @@
     "appId": "com.adb.tool",
     "productName": "ADB Tool",
     "win": {
-      "target": "nsis",
-      "icon": "icon.ico"
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
     },
     "extraResources": [
-      {
-        "from": "default-commands.json",
-        "to": "default-commands.json"
-      }
+      { "from": "default-commands.json", "to": "default-commands.json" },
+      { "from": "adb",                   "to": "adb" }
     ]
   }
 }
