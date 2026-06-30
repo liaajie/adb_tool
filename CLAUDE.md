@@ -6,8 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 npm start        # 启动 Electron 开发环境
-npm run dist     # 打包 NSIS 安装包（Windows）
-node --check main.js preload.js renderer.js   # 语法检查
+npm run dist     # 打包 NSIS 安装包（electron-builder，需联网下载 Electron）
+npm run portable # 手工打便携版到 dist/ADB Tool/（绕过 electron-builder 网络下载，见 build-portable.js）
+node --check main.js preload.js renderer.js   # 语法检查（无测试框架）
 ```
 
 ## Architecture
@@ -25,8 +26,10 @@ default-commands.json  # 预设配置，首次启动从此拷贝到 %APPDATA%/ad
 **数据流**：`config.json` → `renderer.js` 解析 → 按 `widget` 类型渲染控件 → 用户操作 → `adb.run()`/`adb.stream()` → `main.js` 执行 adb → 输出区显示。
 
 **IPC 约定**：
-- `adb:run` — 单次执行，返回 `{ok, stdout, stderr}`
+- `adb:run` — 单次执行，返回 `{ok, stdout, stderr, cmd}`（30s 超时）
 - `adb:stream` / `adb:stream:kill` — 流式执行（spawn），适合 `top`/`tail -f` 类持续输出命令，用 `"stream": true` 字段在 config 中标记
+- `net:probe` — TCP 端口探测（自动连接的心跳判定），并发探测多 host
+- `config:load|save|export|import|reset` + `adb:setPath`、`adb:devices`
 
 **Config schema 关键字段**：
 - `groups[].commands[].widget` — `button|slider|switch|input|select`

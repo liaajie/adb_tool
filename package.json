@@ -26,8 +26,14 @@
       "createStartMenuShortcut": true
     },
     "extraResources": [
-      { "from": "default-commands.json", "to": "default-commands.json" },
-      { "from": "adb",                   "to": "adb" }
+      {
+        "from": "default-commands.json",
+        "to": "default-commands.json"
+      },
+      {
+        "from": "adb",
+        "to": "adb"
+      }
     ]
   }
 }

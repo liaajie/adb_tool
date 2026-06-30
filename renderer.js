@@ -431,7 +431,7 @@ async function execute(cmd, label, stream) {
     logEl.appendChild(stopBtn)
     logEl.scrollTop = 9999
     adb.stream(id, cmd, serial(), msg => {
-      if (msg.type === 'data') { div.textContent += msg.data; logEl.scrollTop = 9999 }
+      if (msg.type === 'data') { div.textContent += stripAnsi(msg.data); logEl.scrollTop = 9999 }
       else if (msg.type === 'err') { log('err', msg.data.trim()) }
       else { stopBtn.remove(); adb.streamKill(id) }   // ponytail: 自然结束也要清监听器,否则闭包持有 div 泄漏
     })
@@ -445,11 +445,13 @@ async function execute(cmd, label, stream) {
 }
 
 // ── Output ────────────────────────────────────────────────────────────────────
+const stripAnsi = s => s.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
+
 function log(type, msg) {
   const el = document.getElementById('output-log')
   const div = document.createElement('div')
   div.className = `log-${type}`
-  div.textContent = msg
+  div.textContent = stripAnsi(msg)
   el.appendChild(div)
   el.scrollTop = el.scrollHeight
 }
