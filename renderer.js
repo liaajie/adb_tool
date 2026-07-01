@@ -437,10 +437,27 @@ async function execute(cmd, label, stream) {
     })
     return
   }
+  const logEl = document.getElementById('output-log')
+  const div = document.createElement('div')
+  div.className = 'log-ok'
+  logEl.appendChild(div)
+  const stopBtn = document.createElement('button')
+  stopBtn.className = 'btn danger'
+  stopBtn.style.cssText = 'margin:4px 0;font-size:11px;height:22px;padding:0 8px'
+  stopBtn.textContent = '■ 停止'
+  stopBtn.onclick = () => adb.runKill()
+  logEl.appendChild(stopBtn)
+  adb.onRunData(msg => {
+    const text = stripAnsi(msg.data)
+    if (!text.trim()) return
+    if (msg.type === 'out') { div.textContent += text; logEl.scrollTop = logEl.scrollHeight }
+    else { log('err', text.trim()) }
+  })
   const result = await adb.run(cmd, serial())
-  if (result.stdout) log('ok', result.stdout.trim())
-  if (result.stderr) log('err', result.stderr.trim())
-  if (!result.ok && !result.stderr) log('err', '执行失败')
+  adb.offRunData()
+  stopBtn.remove()
+  if (!div.textContent && result.stdout) div.textContent = result.stdout.trim()
+  if (!result.ok && !result.stderr && !div.textContent) log('err', '执行失败')
   return result
 }
 

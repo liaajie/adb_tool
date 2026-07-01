@@ -18,4 +18,7 @@ contextBridge.exposeInMainWorld('adb', {
     ipcRenderer.send('adb:stream:kill', id)
   },
   probe: (hosts, port, timeoutMs) => ipcRenderer.invoke('net:probe', { hosts, port, timeoutMs }),
+  onRunData:  (cb) => ipcRenderer.on('adb:run:data', (_, d) => cb(d)),
+  offRunData: ()   => ipcRenderer.removeAllListeners('adb:run:data'),
+  runKill:    ()   => ipcRenderer.send('adb:run:kill'),
 })

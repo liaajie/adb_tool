@@ -58,13 +58,25 @@ ipcMain.handle('adb:devices', () => new Promise(resolve => {
   })
 }))
 
-ipcMain.handle('adb:run', (_, { cmd, serial }) => new Promise(resolve => {
+let currentRunProc = null // ponytail: single concurrent run assumption
+ipcMain.handle('adb:run', (event, { cmd, serial }) => new Promise(resolve => {
   const s = serial ? `-s "${sanitize(serial)}"` : ''
   const full = `"${adbPath}" ${s} ${cmd}`
-  exec(full, { timeout: 30000 }, (err, stdout, stderr) => {
-    resolve({ ok: !err, stdout: stdout || '', stderr: stderr || '', cmd: full })
-  })
+  const proc = spawn(full, { shell: true, timeout: 30000 })
+  currentRunProc = proc
+  const push = (type, data) => { try { event.sender.send('adb:run:data', { type, data }) } catch {} }
+  let stdout = '', stderr = ''
+  proc.stdout.on('data', d => { stdout += d; push('out', d.toString()) })
+  proc.stderr.on('data', d => { stderr += d; push('err', d.toString()) })
+  proc.on('close', code => { currentRunProc = null; resolve({ ok: code === 0, stdout, stderr, cmd: full }) })
+  proc.on('error', err => { currentRunProc = null; resolve({ ok: false, stdout, stderr: err.message, cmd: full }) })
 }))
+const killProc = (proc) => {
+  if (!proc) return
+  if (process.platform === 'win32') exec(`taskkill /F /T /PID ${proc.pid}`)
+  else proc.kill()
+}
+ipcMain.on('adb:run:kill', () => { killProc(currentRunProc); currentRunProc = null })
 
 // ponytail: global map for active streams, per-window kill on close is fine for MVP
 const activeStreams = new Map()
@@ -79,7 +91,7 @@ ipcMain.on('adb:stream', (event, { id, cmd, serial }) => {
   proc.on('close', () => { activeStreams.delete(id); send('end', '') })
 })
 
-ipcMain.on('adb:stream:kill', (_, id) => { activeStreams.get(id)?.kill(); activeStreams.delete(id) })
+ipcMain.on('adb:stream:kill', (_, id) => { killProc(activeStreams.get(id)); activeStreams.delete(id) })
 
 // TCP 端口探测,用于自动连接的"心跳"判定
 ipcMain.handle('net:probe', (_, { hosts, port, timeoutMs }) => {
